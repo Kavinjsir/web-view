@@ -2,7 +2,7 @@ import scrapy
 import re
 import json
 
-class QuotesSpider(scrapy.Spider):
+class GnewsSpider(scrapy.Spider):
     name = "gnews"
 
     keyword1 = "booster"
