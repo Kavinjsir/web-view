@@ -6,7 +6,7 @@ class GnewsSpider(scrapy.Spider):
     name = "gnews"
 
     keyword1 = "booster"
-    keyword2 = "omnicron"
+    keyword2 = "omicron"
 
     start_urls = [
         f'https://news.google.com/search?q={keyword1}+{keyword2}&hl=en-US&gl=US&ceid=US%3Aen'

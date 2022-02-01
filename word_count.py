@@ -14,7 +14,7 @@ WORD_COUNT = {
     VACCINE: 0
 }
 
-with open('booster_omnicron.json', 'r') as f:
+with open('booster_omicron.json', 'r') as f:
     json_data = f.read()
 
 title_list = json.loads(json_data)
