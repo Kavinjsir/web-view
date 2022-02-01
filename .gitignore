@@ -1,3 +1,6 @@
+# Crawl data output file
+booster_omnicron.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
