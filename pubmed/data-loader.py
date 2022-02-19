@@ -1,62 +1,75 @@
+from peewee import *
+from playhouse.db_url import connect
 from pymed import PubMed
-import threading, queue, csv, re, pathlib
+from datetime import datetime
+import time, os
 
-# OUTPUT_PATH
-PATH_PREFIX = str(pathlib.Path().resolve()) + "/data"
+# Validate if a given publication_date is a date format (yyyy-mm-dd)
+def validate(date_num):
+    date_text = str(date_num)
+    try:
+        if date_text != datetime.strptime(date_text, "%Y-%m-%d").strftime('%Y-%m-%d'):
+            raise ValueError
+        return True
+    except ValueError:
+        return False
 
-# Query to search keywords Covid-19/Vaccine/Booster/mRNA that includes in title/abstract from 2019-2022
-PUB_QUERY= '((((Covid-19[Title/Abstract]) OR (Vaccine[Title/Abstract])) OR (Booster[Title/Abstract])) OR (mRNA[Title/Abstract])) AND (("{}"[Date - Publication] : "{}"[Date - Publication]))'
+DB_URL = os.environ.get('DATABASE')
+db = connect(DB_URL)
 
-# Year to query
-TARGET_YEARS = [ 2019, 2020, 2021, 2022 ]
+class BaseModel(Model):
+    class Meta:
+        database = db
 
-# SEASONS = [ ('01/01', '03/31'), ('04/01', '06/30'), ('07/01', '09/30'), ('10/01', '12/31') ]
-SEASONS = [ ('12/21', '12/23'), ('12/24', '12/26'), ('12/27', '12/29'), ('12/30', '12/31') ]
+class Dataset(BaseModel):
+    date = DateField()
+    title = TextField()
+    abstract = TextField()
+    keyword = TextField()
 
-# Ask as much as 1000,000 entries for each season
-MAX_RESULTS = 100000
+db.create_tables([Dataset])
 
-q = queue.Queue()
+# Query to search keywords that includes in title/abstract from 2019-2022
+PUB_QUERY = '({}[Title/Abstract]) AND (("2019/01/01"[Date - Publication] : "3000"[Date - Publication]))'
 
-def downloader():
-    while True:
-        query = q.get()
+# Set Keyword: Covid-19 / Vaccine / Booster / mRNA 
+KEYWORD = os.environ['KEYWORD']
 
-        start, end = re.findall(r"\d{4}\/\d{2}\/\d{2}", query)
-        print(f'{start}-{end} start')
+# Create query
+query = PUB_QUERY.format(KEYWORD)
 
-        pubmed = PubMed(tool="AnalyzeTool", email="student@bu.edu")
-        results = pubmed.query(query, max_results=MAX_RESULTS)
+# Initailize downloader
+pubmed = PubMed(tool="AnalyzeTool", email="student@bu.edu")
 
-        filename = "{}/{}-{}.csv".format(PATH_PREFIX, start.replace("/", "-"), end.replace("/", "-"))
-        with open(filename, 'w', newline='') as csvfile:
-            data_writer = csv.writer(csvfile, delimiter=',')
+# Ask as much as 10,000,000 entries for each keyword
+MAX_RESULTS = 10000000
 
-            for article in results:
-                if hasattr(article, 'title') and hasattr(article, 'publication_date') and hasattr(article, 'abstract'):
-                    title = article.title.strip('"')
-                    date = article.publication_date
-                    # abstract = article.abstract.replace("\n", "")
+print("Start crawling: ", query)
 
-                    data_writer.writerow([date, title])
+start = time.time()
 
-        print(f'{filename} done')
-        q.task_done()
+results = pubmed.query(query, max_results=MAX_RESULTS)
 
+error_count = 0
 
-# turn-on the worker thread
-threading.Thread(target=downloader, daemon=True).start()
+for article in results:
+    title = article.title.strip('"')
+    isDate = validate(article.publication_date)
+    if title is not None and isDate and article.abstract is not None:
+        abstract = article.abstract.replace("\n", " ").replace("\r", " ")
+        if abstract is not None:
+            try:
+                data = Dataset(date=article.publication_date, title=title, abstract=abstract, keyword=KEYWORD)
+                data.save()
+            except Exception as e:
+                error_count += 1
+                print("[Insert Error]" + str(date) + ", " + title + ", " + abstract)
+                print(e)
+            if error_count > 3:
+                raise Exception
 
-print("Build queue...")
-for year in TARGET_YEARS:
-    for s in SEASONS:
-        startDate = "{}/{}".format(year, s[0])
-        endDate = "{}/{}".format(year, s[1])
-        query = PUB_QUERY.format(startDate, endDate)
-        q.put(query)
-print("Queue built.")
+end = time.time()
+print(end - start)
 
-q.join()
-
-print("All tasks complete.")
+print("Complete: {} items".format(Dataset.select().count()))
 
